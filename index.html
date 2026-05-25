@@ -642,7 +642,12 @@
   function pickForSlot(j){ window._replaceSlot=j; openPicker(); }
   function useTemplate(){ window._genVideo=false; useTemplateCore(document.querySelector('#f3 .promptbox p').textContent, curThumb(), true); }
   function useVideoTemplate(){ window._genVideo=true; window._vidPoster=(curVid.img||'assets/migoo-media/results/vid.jpg'); var ts=curVid.thumbs||[]; useTemplateCore(document.getElementById('vdDesc').textContent, ts, ts.length>0); }
-  function openBlankInput(){ window._genVideo=false; useTemplateCore('', [], false); IF.classList.add('blank'); }
+  function openBlankInput(){
+    window._genVideo=false; useTemplateCore('', [], false); IF.classList.add('blank');
+    // sync the Image/Video toggle to the tab the user launched from
+    var wantVid=document.getElementById('f2').classList.contains('vmode');
+    document.querySelectorAll('.ic-toggle .seg-opt').forEach(function(s){ s.classList.toggle('on', s.textContent.trim()===(wantVid?'Video':'Image')); });
+  }
   function setCreateType(el){ el.parentElement.querySelectorAll('.seg-opt').forEach(function(s){s.classList.remove('on');}); el.classList.add('on'); }
   function renderImgs(){
     var box=document.getElementById('icImgs');
@@ -755,8 +760,13 @@
     var src=el.querySelector('img').getAttribute('src');
     if(slotMode()){
       var rs=window._replaceSlot;
-      if(rs==null){ rs=-1; for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j]){rs=j;break;} } } // no target → first empty slot
-      if(rs>=0){ selPhotos[rs]=(selPhotos[rs]===src)?null:src; } // tapping the slot's current photo clears it
+      if(rs==null){
+        var existing=selPhotos.indexOf(src);
+        if(existing>=0){ selPhotos[existing]=null; window._replaceSlot=null; refreshBadges(); renderImgs(); return; } // re-tap selected → deselect
+        rs=-1; for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j]){rs=j;break;} } // else first empty slot
+        if(rs<0) rs=selPhotos.length-1; // all full → swap the last slot
+      }
+      selPhotos[rs]=(selPhotos[rs]===src)?null:src;
       window._replaceSlot=null;
     } else {
       var i=selPhotos.indexOf(src);
