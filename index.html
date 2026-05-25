@@ -638,18 +638,23 @@
   function setCreateType(el){ el.parentElement.querySelectorAll('.seg-opt').forEach(function(s){s.classList.remove('on');}); el.classList.add('on'); }
   function renderImgs(){
     var box=document.getElementById('icImgs');
-    if(selPhotos.length===0){
-      var thumbs=window._tplThumbs||[];
-      if(!window._hasSample || !thumbs.length){ box.style.display='none'; box.innerHTML=''; return; }
-      box.style.display='';
-      box.innerHTML=thumbs.map(function(t,i){
-        var label=thumbs.length>1 ? ('sample'+(i+1)) : 'sample';
-        return '<div class="ic-thumb" onclick="openPicker()"><img src="'+t+'"><div class="ic-sample"><img src="assets/migoo-media/ui/sample-frame.svg" alt=""><span>'+label+'</span></div></div>';
-      }).join('');
-    } else {
-      box.style.display='';
-      box.innerHTML=selPhotos.map(function(src,i){return '<div class="ic-thumb"><img src="'+src+'"><span class="ic-x" onclick="removeSel('+i+')">×</span></div>';}).join('');
+    var thumbs=window._tplThumbs||[];
+    var hasSample=window._hasSample && thumbs.length>0;
+    if(selPhotos.length===0 && !hasSample){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='';
+    var html='';
+    // 1) user-added photos (removable) — these fill sample slots one by one
+    for(var i=0;i<selPhotos.length;i++){
+      html+='<div class="ic-thumb"><img src="'+selPhotos[i]+'"><span class="ic-x" onclick="removeSel('+i+')">×</span></div>';
     }
+    // 2) remaining un-replaced sample slots (labeled, tap to add/replace)
+    if(hasSample){
+      for(var j=selPhotos.length;j<thumbs.length;j++){
+        var label=thumbs.length>1 ? ('sample'+(j+1)) : 'sample';
+        html+='<div class="ic-thumb" onclick="openPicker()"><img src="'+thumbs[j]+'"><div class="ic-sample"><img src="assets/migoo-media/ui/sample-frame.svg" alt=""><span>'+label+'</span></div></div>';
+      }
+    }
+    box.innerHTML=html;
   }
   function setMediaMode(m){
     var f2=document.getElementById('f2');
