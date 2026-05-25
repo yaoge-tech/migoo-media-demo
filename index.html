@@ -629,9 +629,14 @@
     window._tplThumbs = Array.isArray(thumbs) ? thumbs.slice() : (thumbs ? [thumbs] : []);
     window._tplThumb = window._tplThumbs[0] || '';  // back-compat
     window._hasSample=hasSample;
-    selPhotos=[]; refreshBadges(); renderImgs();
+    window._replaceSlot=null;
+    // slot mode: one fixed slot per sample (entry = user photo or null=show sample); else free list
+    selPhotos = slotMode() ? new Array(window._tplThumbs.length).fill(null) : [];
+    refreshBadges(); renderImgs();
     IF.className='show mode-kbd';
   }
+  function slotMode(){ return !!(window._hasSample && window._tplThumbs && window._tplThumbs.length>0); }
+  function pickForSlot(j){ window._replaceSlot=j; openPicker(); }
   function useTemplate(){ window._genVideo=false; useTemplateCore(document.querySelector('#f3 .promptbox p').textContent, curThumb(), true); }
   function useVideoTemplate(){ window._genVideo=true; window._vidPoster=(curVid.img||'assets/migoo-media/results/vid.jpg'); var ts=curVid.thumbs||[]; useTemplateCore(document.getElementById('vdDesc').textContent, ts, ts.length>0); }
   function openBlankInput(){ window._genVideo=false; useTemplateCore('', [], false); IF.classList.add('blank'); }
@@ -639,22 +644,23 @@
   function renderImgs(){
     var box=document.getElementById('icImgs');
     var thumbs=window._tplThumbs||[];
-    var hasSample=window._hasSample && thumbs.length>0;
-    if(selPhotos.length===0 && !hasSample){ box.style.display='none'; box.innerHTML=''; return; }
-    box.style.display='';
     var html='';
-    // 1) user-added photos (removable) — these fill sample slots one by one
-    for(var i=0;i<selPhotos.length;i++){
-      html+='<div class="ic-thumb"><img src="'+selPhotos[i]+'"><span class="ic-x" onclick="removeSel('+i+')">×</span></div>';
-    }
-    // 2) remaining un-replaced sample slots (labeled, tap to add/replace)
-    if(hasSample){
-      for(var j=selPhotos.length;j<thumbs.length;j++){
-        var label=thumbs.length>1 ? ('sample'+(j+1)) : 'sample';
-        html+='<div class="ic-thumb" onclick="openPicker()"><img src="'+thumbs[j]+'"><div class="ic-sample"><img src="assets/migoo-media/ui/sample-frame.svg" alt=""><span>'+label+'</span></div></div>';
+    if(slotMode()){
+      // one fixed slot per sample; replaced slots show the user photo, others show the sample
+      for(var j=0;j<thumbs.length;j++){
+        if(selPhotos[j]){
+          html+='<div class="ic-thumb"><img src="'+selPhotos[j]+'"><span class="ic-x" onclick="removeSel('+j+')">×</span></div>';
+        } else {
+          var label=thumbs.length>1 ? ('sample'+(j+1)) : 'sample';
+          html+='<div class="ic-thumb" onclick="pickForSlot('+j+')"><img src="'+thumbs[j]+'"><div class="ic-sample"><img src="assets/migoo-media/ui/sample-frame.svg" alt=""><span>'+label+'</span></div></div>';
+        }
       }
+      box.style.display=''; box.innerHTML=html; return;
     }
-    box.innerHTML=html;
+    // free mode (blank input / no samples): plain list of user photos
+    if(selPhotos.length===0){ box.style.display='none'; box.innerHTML=''; return; }
+    box.style.display='';
+    box.innerHTML=selPhotos.map(function(src,i){return '<div class="ic-thumb"><img src="'+src+'"><span class="ic-x" onclick="removeSel('+i+')">×</span></div>';}).join('');
   }
   function setMediaMode(m){
     var f2=document.getElementById('f2');
@@ -703,7 +709,18 @@
     document.getElementById('alN').textContent=albumSel.length;
   }
   function albumNext(){
-    if(albumSel.length){ selPhotos=albumSel.slice(); }
+    if(albumSel.length){
+      if(slotMode()){
+        // fill the tapped slot first (if any), then remaining empty slots in order
+        var targets=[];
+        if(window._replaceSlot!=null) targets.push(window._replaceSlot);
+        for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j] && targets.indexOf(j)<0) targets.push(j); }
+        for(var k=0;k<albumSel.length && k<targets.length;k++){ selPhotos[targets[k]]=albumSel[k]; }
+        window._replaceSlot=null;
+      } else {
+        selPhotos=albumSel.slice();
+      }
+    }
     albumSel=[]; renderAlbum();
     closeAlbum();
     IF.classList.remove('mode-pick'); IF.classList.add('show','mode-kbd');
@@ -723,23 +740,35 @@
   })();
   function refreshBadges(){
     document.querySelectorAll('.pphoto').forEach(function(p){
-      var s=p.querySelector('img').getAttribute('src');var n=selPhotos.indexOf(s);
+      var s=p.querySelector('img').getAttribute('src');
+      var n=-1;
+      if(slotMode()){ for(var j=0;j<selPhotos.length;j++){ if(selPhotos[j]===s){n=j;break;} } }
+      else { n=selPhotos.indexOf(s); }
       if(n>=0){p.classList.add('sel');p.querySelector('.pbadge').textContent=(n+1);}
       else{p.classList.remove('sel');p.querySelector('.pbadge').textContent='';}
     });
   }
   function selectPhoto(el){
     var src=el.querySelector('img').getAttribute('src');
-    var i=selPhotos.indexOf(src);
-    if(i>=0) selPhotos.splice(i,1); else selPhotos.push(src);
+    if(slotMode()){
+      var rs=window._replaceSlot;
+      if(rs==null){ rs=-1; for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j]){rs=j;break;} } } // no target → first empty slot
+      if(rs>=0){ selPhotos[rs]=(selPhotos[rs]===src)?null:src; } // tapping the slot's current photo clears it
+      window._replaceSlot=null;
+    } else {
+      var i=selPhotos.indexOf(src);
+      if(i>=0) selPhotos.splice(i,1); else selPhotos.push(src);
+    }
     refreshBadges(); renderImgs();
   }
-  function removeSel(i){ selPhotos.splice(i,1); refreshBadges(); renderImgs(); }
+  function removeSel(i){ if(slotMode()) selPhotos[i]=null; else selPhotos.splice(i,1); refreshBadges(); renderImgs(); }
   function closeInput(){ IF.className=''; }
   function sendMsg(){
     var mimg=document.getElementById('f7imgs');
     // user-added images take priority; otherwise fall back to the template's sample/material image; otherwise text only
-    var imgs = selPhotos.length ? selPhotos.slice() : ((window._tplThumbs && window._tplThumbs.length) ? window._tplThumbs.slice() : []);
+    var imgs;
+    if(slotMode()){ imgs = window._tplThumbs.map(function(t,j){ return selPhotos[j] || t; }); } // user photo where replaced, else sample
+    else { imgs = selPhotos.length ? selPhotos.slice() : ((window._tplThumbs && window._tplThumbs.length) ? window._tplThumbs.slice() : []); }
     if(imgs.length){ mimg.style.display='flex'; mimg.innerHTML=imgs.map(function(s){return '<img src="'+s+'" alt="">';}).join(''); }
     else { mimg.style.display='none'; mimg.innerHTML=''; }
     var isVideo=!!window._genVideo;
