@@ -114,7 +114,8 @@
   #inputFlow.show{display:block;}
   .if-scrim{position:absolute;inset:0;background:transparent;}
   .ic-card{position:absolute;left:16px;bottom:327px;width:361px;background:#fff;border-radius:20px;box-shadow:0 0 16px #eaedfa,0 8px 16px rgba(234,237,250,.04);z-index:3;padding:12px 12px 12px 16px;display:flex;flex-direction:column;gap:12px;}
-  .ic-imgs{display:flex;gap:8px;align-items:center;}
+  .ic-imgs{display:flex;gap:8px;align-items:center;overflow-x:auto;scrollbar-width:none;}
+  .ic-imgs::-webkit-scrollbar{display:none;}
   .ic-thumb{width:64px;height:64px;border-radius:12px;overflow:hidden;position:relative;flex:0 0 auto;background:#e9e9ef;cursor:pointer;}
   .ic-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
   .ic-sample{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none;background:rgba(0,0,0,.38);border-radius:12px;}
@@ -639,13 +640,14 @@
     var thumbs=window._tplThumbs||[];
     var html='';
     if(slotMode()){
-      // one fixed slot per sample; replaced slots show the user photo, others show the sample
-      for(var j=0;j<thumbs.length;j++){
-        if(selPhotos[j]){
-          html+='<div class="ic-thumb"><img src="'+selPhotos[j]+'"><span class="ic-x" onclick="removeSel('+j+')">×</span></div>';
-        } else {
-          var label=thumbs.length>1 ? ('sample'+(j+1)) : 'sample';
+      // sample slots (replaceable) + any extra user photos appended beyond the samples (no cap)
+      var N=thumbs.length, total=Math.max(N, selPhotos.length);
+      for(var j=0;j<total;j++){
+        if(j<N && !selPhotos[j]){
+          var label=N>1 ? ('sample'+(j+1)) : 'sample';
           html+='<div class="ic-thumb" onclick="pickForSlot('+j+')"><img src="'+thumbs[j]+'"><div class="ic-sample"><img src="assets/migoo-media/ui/sample-frame.svg" alt=""><span>'+label+'</span></div></div>';
+        } else if(selPhotos[j]){
+          html+='<div class="ic-thumb"><img src="'+selPhotos[j]+'"><span class="ic-x" onclick="removeSel('+j+')">×</span></div>';
         }
       }
       box.style.display=''; box.innerHTML=html; return;
@@ -703,11 +705,13 @@
   function albumNext(){
     if(albumSel.length){
       if(slotMode()){
-        // fill the tapped slot first (if any), then remaining empty slots in order
-        var targets=[];
+        // fill the tapped slot first (if any), then remaining empty slots, then append extras (no cap)
+        var N=window._tplThumbs.length, targets=[];
         if(window._replaceSlot!=null) targets.push(window._replaceSlot);
-        for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j] && targets.indexOf(j)<0) targets.push(j); }
-        for(var k=0;k<albumSel.length && k<targets.length;k++){ selPhotos[targets[k]]=albumSel[k]; }
+        for(var j=0;j<N;j++){ if(!selPhotos[j] && targets.indexOf(j)<0) targets.push(j); }
+        var k=0;
+        for(; k<albumSel.length && k<targets.length; k++){ selPhotos[targets[k]]=albumSel[k]; }
+        for(; k<albumSel.length; k++){ selPhotos.push(albumSel[k]); }
         window._replaceSlot=null;
       } else {
         selPhotos=albumSel.slice();
@@ -743,28 +747,32 @@
   function selectPhoto(el){
     var src=el.querySelector('img').getAttribute('src');
     if(slotMode()){
-      var rs=window._replaceSlot;
-      if(rs==null){
+      var N=window._tplThumbs.length, rs=window._replaceSlot;
+      if(rs!=null){ selPhotos[rs]=(selPhotos[rs]===src)?null:src; window._replaceSlot=null; } // targeted slot replace
+      else {
         var existing=selPhotos.indexOf(src);
-        if(existing>=0){ selPhotos[existing]=null; window._replaceSlot=null; refreshBadges(); renderImgs(); return; } // re-tap selected → deselect
-        rs=-1; for(var j=0;j<selPhotos.length;j++){ if(!selPhotos[j]){rs=j;break;} } // else first empty slot
-        if(rs<0) rs=selPhotos.length-1; // all full → swap the last slot
+        if(existing>=0){ if(existing<N) selPhotos[existing]=null; else selPhotos.splice(existing,1); } // re-tap → deselect
+        else { var e=-1; for(var j=0;j<N;j++){ if(!selPhotos[j]){e=j;break;} } if(e>=0) selPhotos[e]=src; else selPhotos.push(src); } // first empty slot, else append extra (no cap)
       }
-      selPhotos[rs]=(selPhotos[rs]===src)?null:src;
-      window._replaceSlot=null;
     } else {
       var i=selPhotos.indexOf(src);
       if(i>=0) selPhotos.splice(i,1); else selPhotos.push(src);
     }
     refreshBadges(); renderImgs();
   }
-  function removeSel(i){ if(slotMode()) selPhotos[i]=null; else selPhotos.splice(i,1); refreshBadges(); renderImgs(); }
+  function removeSel(i){ if(slotMode() && i<window._tplThumbs.length) selPhotos[i]=null; else selPhotos.splice(i,1); refreshBadges(); renderImgs(); }
   function closeInput(){ IF.className=''; }
   function sendMsg(){
     var mimg=document.getElementById('f7imgs');
     // user-added images take priority; otherwise fall back to the template's sample/material image; otherwise text only
     var imgs;
-    if(slotMode()){ imgs = window._tplThumbs.map(function(t,j){ return selPhotos[j] || t; }); } // user photo where replaced, else sample
+    if(slotMode()){ // slots (user photo where replaced, else sample) + any extra user photos
+      var N=window._tplThumbs.length; imgs=[];
+      for(var si=0; si<Math.max(N, selPhotos.length); si++){
+        if(si<N) imgs.push(selPhotos[si] || window._tplThumbs[si]);
+        else if(selPhotos[si]) imgs.push(selPhotos[si]);
+      }
+    }
     else { imgs = selPhotos.length ? selPhotos.slice() : ((window._tplThumbs && window._tplThumbs.length) ? window._tplThumbs.slice() : []); }
     if(imgs.length){ mimg.style.display='flex'; mimg.innerHTML=imgs.map(function(s){return '<img src="'+s+'" alt="">';}).join(''); }
     else { mimg.style.display='none'; mimg.innerHTML=''; }
